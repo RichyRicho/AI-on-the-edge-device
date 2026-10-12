@@ -72,8 +72,28 @@ jobs:
         pip install --upgrade platformio
 
     - name: Build Firmware
-      #run: echo "Testing... ${{ github.ref_name }}, ${{ steps.vars.outputs.sha_short }}" > ./sd-card/html/version.txt; mkdir -p ./code/.pio/build/esp32cam/; cd ./code/.pio/build/esp32cam/; echo "${{ steps.vars.outputs.sha_short }}" > firmware.bin; cp firmware.bin partitions.bin; cp firmware.bin bootloader.bin # Testing
-      run: cd code; platformio run --environment esp32cam
+      # The ESP-IDF virtualenv is created by the first PlatformIO build.
+      # If its bundled component manager is too old for esp_jpeg's manifest,
+      # upgrade that manager and retry once.
+      run: |
+        cd code
+        set +e
+        platformio run --environment esp32cam 2>&1 | tee /tmp/platformio-build.log
+        build_status=${PIPESTATUS[0]}
+        set -e
+        if [ "$build_status" -eq 0 ]; then
+          exit 0
+        fi
+        if ! grep -q "Unknown keys: repository_info" /tmp/platformio-build.log; then
+          exit "$build_status"
+        fi
+        component_python="$(find "$HOME/.platformio/penv" -path '*/bin/python' -type f | grep '/.espidf-' | head -n 1)"
+        if [ -z "$component_python" ]; then
+          echo "Could not find the ESP-IDF virtualenv Python to upgrade idf-component-manager."
+          exit 1
+        fi
+        "$component_python" -m pip install --upgrade idf-component-manager
+        platformio run --environment esp32cam
 
     - name: Prepare Web UI (generate tooltip pages and update hashes in all files)
       run: |
