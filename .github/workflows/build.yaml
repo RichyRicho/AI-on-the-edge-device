@@ -72,9 +72,11 @@ jobs:
         pip install --upgrade platformio
 
     - name: Build Firmware
-      # The ESP-IDF virtualenv is created by the first PlatformIO build.
-      # If its bundled component manager is too old for esp_jpeg's manifest,
-      # upgrade that manager and retry once.
+      # The ESP-IDF component manager bundled with this PlatformIO platform
+      # is too old for esp_jpeg's repository_info manifest field. On that
+      # specific failure, move the component out of managed_components (so
+      # ESP-IDF won't reject local compatibility edits), remove that optional
+      # metadata, and retry the build.
       run: |
         cd code
         set +e
@@ -87,29 +89,30 @@ jobs:
         if ! grep -q "Unknown keys: repository_info" /tmp/platformio-build.log; then
           exit "$build_status"
         fi
-        # The ESP-IDF 5.1.2 component manager bundled by this PlatformIO
-        # platform rejects the repository_info metadata in the downloaded
-        # esp_jpeg manifest. Strip that optional registry-only metadata and retry.
-        manifest="managed_components/espressif__esp_jpeg/idf_component.yml"
-        if [ ! -f "$manifest" ]; then
-          echo "Expected downloaded esp_jpeg manifest not found: $manifest"
+        managed="managed_components/espressif__esp_jpeg"
+        if [ ! -f "$managed/idf_component.yml" ]; then
+          echo "Expected downloaded esp_jpeg manifest not found: $managed/idf_component.yml"
           exit 1
         fi
+        mkdir -p components
+        if [ -e "components/espressif__esp_jpeg" ]; then
+          echo "Local components/espressif__esp_jpeg already exists; refusing to overwrite it"
+          exit 1
+        fi
+        mv "$managed" "components/espressif__esp_jpeg"
+        manifest="components/espressif__esp_jpeg/idf_component.yml"
         python - "$manifest" <<'PY'
         import re
         import sys
         from pathlib import Path
         path = Path(sys.argv[1])
         text = path.read_text()
-        updated, count = re.subn(r"(?m)^repository_info:\s*\n(?:^[ \t]+.*\n)*", "", text)
+        updated, count = re.subn(r"(?m)^repository_info:\\s*\\n(?:^[ \\t]+.*\\n)*", "", text)
         if count == 0:
             raise SystemExit("repository_info metadata was not found; refusing to change the manifest")
         path.write_text(updated)
-        print(f"Removed optional repository_info metadata from {path}")
+        print(f"Moved esp_jpeg to local components and removed optional repository_info metadata from {path}")
         PY
-        # ESP-IDF checks the managed component hash on retry; remove the stale
-        # hash so the one-off compatibility edit is accepted by this build.
-        rm -f "managed_components/espressif__esp_jpeg/.component_hash"
         platformio run --environment esp32cam
 
     - name: Prepare Web UI (generate tooltip pages and update hashes in all files)
