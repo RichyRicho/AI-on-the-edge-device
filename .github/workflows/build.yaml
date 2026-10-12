@@ -107,6 +107,9 @@ jobs:
         path.write_text(updated)
         print(f"Removed optional repository_info metadata from {path}")
         PY
+        # ESP-IDF checks the managed component hash on retry; remove the stale
+        # hash so the one-off compatibility edit is accepted by this build.
+        rm -f "managed_components/espressif__esp_jpeg/.component_hash"
         platformio run --environment esp32cam
 
     - name: Prepare Web UI (generate tooltip pages and update hashes in all files)
