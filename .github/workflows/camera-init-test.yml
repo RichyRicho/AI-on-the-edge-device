@@ -1,0 +1,92 @@
+name: Test camera-init workaround
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          ref: fix/camera-init-platform-6.5
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio markdown
+
+      - name: Build firmware
+        run: cd code && platformio run --environment esp32cam
+
+      - name: Prepare web UI
+        run: |
+          rm -rf ./html
+          mkdir html
+          cp -r ./sd-card/html/* ./html/
+          mkdir html/param-tooltips
+          cd tools/parameter-tooltip-generator
+          python generate-param-doc-tooltips.py
+          cd ../..
+          cp -r ./sd-card/html/* ./html/
+          rm -f ./html/edit_config_template.html
+          cd html
+          find . -type f -exec sed -i 's/\$COMMIT_HASH/${{ github.sha }}/g' {} \;
+          find . -name "*.html" -type f -exec gzip {} \;
+          find . -name "*.css" -type f -exec gzip {} \;
+          find . -name "*.js" -type f -exec gzip {} \;
+          find . -name "*.jpg" -type f -exec gzip {} \;
+          find . -name "*.png" -type f -exec gzip {} \;
+          find . -name "*.svg" -type f -exec gzip {} \;
+          find . -name "*.map" -type f -exec gzip {} \;
+
+      - name: Prepare demo files
+        run: |
+          rm -rf ./demo
+          mkdir demo
+          cp -r ./sd-card/demo/* ./demo/
+
+      - name: Prepare OTA update ZIP
+        run: |
+          mkdir -p package/update/config
+          cp code/.pio/build/esp32cam/firmware.bin package/update/firmware.bin
+          cp -r html package/update/
+          cp -r demo package/update/
+          mkdir -p package/update/config
+          cp sd-card/config/*.tfl package/update/config/ 2>/dev/null || true
+          cp sd-card/config/*.tflite package/update/config/ 2>/dev/null || true
+          cd package/update && zip -qr ../../AI-on-the-edge-device__update__camera-init-test.zip .
+          cd ../..
+
+      - name: Prepare manual install ZIP
+        run: |
+          mkdir -p package/manual
+          cp code/.pio/build/esp32cam/firmware.bin package/manual/firmware.bin
+          cp code/.pio/build/esp32cam/bootloader.bin package/manual/bootloader.bin
+          cp code/.pio/build/esp32cam/partitions.bin package/manual/partitions.bin
+          cp -r html package/manual/
+          cp -r demo package/manual/
+          cp sd-card/config/*.tfl package/manual/ 2>/dev/null || true
+          cp sd-card/config/*.tflite package/manual/ 2>/dev/null || true
+          cd package/manual && zip -qr ../../AI-on-the-edge-device__manual-setup__camera-init-test.zip .
+          cd ../..
+
+      - name: Upload test packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: camera-init-test-packages
+          path: |
+            AI-on-the-edge-device__update__camera-init-test.zip
+            AI-on-the-edge-device__manual-setup__camera-init-test.zip
+          retention-days: 30
+          if-no-files-found: error
