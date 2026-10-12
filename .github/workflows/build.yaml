@@ -96,17 +96,17 @@ jobs:
           exit 1
         fi
         python - "$manifest" <<'PY'
-import re
-import sys
-from pathlib import Path
-path = Path(sys.argv[1])
-text = path.read_text()
-updated, count = re.subn(r"(?m)^repository_info:\s*\n(?:^[ \t]+.*\n)*", "", text)
-if count == 0:
-    raise SystemExit("repository_info metadata was not found; refusing to change the manifest")
-path.write_text(updated)
-print(f"Removed optional repository_info metadata from {path}")
-PY
+        import re
+        import sys
+        from pathlib import Path
+        path = Path(sys.argv[1])
+        text = path.read_text()
+        updated, count = re.subn(r"(?m)^repository_info:\s*\n(?:^[ \t]+.*\n)*", "", text)
+        if count == 0:
+            raise SystemExit("repository_info metadata was not found; refusing to change the manifest")
+        path.write_text(updated)
+        print(f"Removed optional repository_info metadata from {path}")
+        PY
         platformio run --environment esp32cam
 
     - name: Prepare Web UI (generate tooltip pages and update hashes in all files)
